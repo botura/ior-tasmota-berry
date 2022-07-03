@@ -33,7 +33,12 @@ class IOR : Driver
     gpio.digital_write(self.PIN_SCLK, 0)
 
     for i: 0..15
-      gpio.digital_write(self.PIN_SDOUT, self.saidas.getbits(15-i, 1))
+      var x = 1
+      if self.saidas.getbits(i, 1)==1 
+        x=0 
+      end
+      gpio.digital_write(self.PIN_SDOUT, x)
+
       gpio.digital_write(self.PIN_SCLK, 1)
       gpio.digital_write(self.PIN_SCLK, 0)
     end
@@ -53,8 +58,8 @@ class IOR : Driver
       self.entradas = bytes("5A5B5C")
       self.saidas = bytes("FF00")
       
-      gpio.pin_mode(self.PIN_OUTS_ON, gpio.OUTPUT)
       gpio.digital_write(self.PIN_OUTS_ON, 1)
+      gpio.pin_mode(self.PIN_OUTS_ON, gpio.OUTPUT)
 
       gpio.pin_mode(self.PIN_SCLK, gpio.OUTPUT)
       gpio.pin_mode(self.PIN_SDOUT, gpio.OUTPUT)
@@ -70,10 +75,11 @@ class IOR : Driver
   end
 
   # every_second
-  def every_second()
+  # def every_second()
+  def every_100ms()
       self.readInput()
-      self.saidas[0]=self.entradas[0]
-      self.saidas[1]=self.entradas[1]
+      self.saidas[0]=self.entradas[1]
+      self.saidas[1]=self.entradas[0]
       self.writeOutput()
       print("Entradas:" + str(self.entradas))
       print("Saidas:" + str(self.saidas))
