@@ -17,7 +17,8 @@ class IOR : Driver
     gpio.digital_write(self.PIN_INPUT_LD, 1)
 
     for i: 0..23
-      self.entradas.setbits(23-i, 1, gpio.digital_read(self.PIN_SDIN))
+      self.entradas.setbits(i, 1, !gpio.digital_read(self.PIN_SDIN))
+      
       gpio.digital_write(self.PIN_SCLK, 0)
       gpio.digital_write(self.PIN_SCLK, 1)
     end
@@ -32,7 +33,7 @@ class IOR : Driver
     gpio.digital_write(self.PIN_SCLK, 0)
 
     for i: 0..15
-      gpio.digital_write(self.PIN_SDOUT, self.saidas.getbits(i, 1))
+      gpio.digital_write(self.PIN_SDOUT, self.saidas.getbits(15-i, 1))
       gpio.digital_write(self.PIN_SCLK, 1)
       gpio.digital_write(self.PIN_SCLK, 0)
     end
