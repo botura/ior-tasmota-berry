@@ -13,6 +13,7 @@ class IOR : Driver
   var PIN_OUT4
   var entradas
   var saidas
+  var dipswtich
   var tmrSendMessage
   var topic
   var entradas_filtro
@@ -22,20 +23,33 @@ class IOR : Driver
 
   # readInput
   def readInput()
-    var entradas_raw = bytes("000000", -3)
+    var entradas_raw = 0x0000
+    var dipswitch_raw = 0x00
     gpio.digital_write(self.PIN_INPUT_LD, 1)
-
-    for i: 0..23
-      entradas_raw.setbits(i, 1, !gpio.digital_read(self.PIN_SDIN))
+    
+    var mask = 0x0080
+    for i: 0..15
+      entradas_raw = entradas_raw | (!gpio.digital_read(self.PIN_SDIN) ? mask : 0)
       
       gpio.digital_write(self.PIN_SCLK, 0)
       gpio.digital_write(self.PIN_SCLK, 1)
+      mask >>= 1
+      if i==7 mask = 0x8000 end
+    end
+    
+    mask = 0x80
+    for i: 0..7
+      dipswitch_raw = dipswitch_raw | (!gpio.digital_read(self.PIN_SDIN) ? mask : 0)
+      
+      gpio.digital_write(self.PIN_SCLK, 0)
+      gpio.digital_write(self.PIN_SCLK, 1)
+      mask >>= 1
     end
 
     gpio.digital_write(self.PIN_INPUT_LD, 0)
 
 
-    # filtro
+    # filtro das entradas
     if (entradas_raw == self.entradas_semFiltro) 
       self.entradas_filtro += 1
     else 
@@ -47,22 +61,24 @@ class IOR : Driver
     end
     self.entradas_semFiltro = entradas_raw
 
+    self.dipswtich = dipswitch_raw
+
   end
 
 
   # writeOutput
   def writeOutput()
+    var mask = 0x8000
     gpio.digital_write(self.PIN_OUTPUT_LD, 0)
     gpio.digital_write(self.PIN_SCLK, 0)
-    var aux = bytes("0000", -2) # -2 -> tamanhno máximo do array é 2
-    aux[0]=self.saidas[1]
-    aux[1]=self.saidas[0]
 
     for i: 0..15
-      gpio.digital_write(self.PIN_SDOUT, (aux.getbits(i, 1)==0) ? 1 : 0)
+      gpio.digital_write(self.PIN_SDOUT, (self.saidas & mask ? 0 : 1))
 
       gpio.digital_write(self.PIN_SCLK, 1)
       gpio.digital_write(self.PIN_SCLK, 0)
+      mask >>= 1
+      if i==7 mask = 0x0080 end
     end
 
     gpio.digital_write(self.PIN_OUTPUT_LD, 1)
@@ -71,8 +87,25 @@ class IOR : Driver
 
   # sendMessage
   def sendMessage()
-    mqtt.publish(string.format("stat/%s/entradas", self.topic), self.entradas)
-    mqtt.publish(string.format("stat/%s/saidas", self.topic), self.saidas)
+    var payloadEntradas = "{"
+    var payloadSaidas = "{"
+    # var teste = self.entradas[0]<<8 + self.entradas[1]
+    var mask = 1
+    for i:0..15
+      payloadEntradas += string.format("\"e%s\":%s", i+1, (self.entradas & mask) ? 1 : 0)
+      payloadSaidas += string.format("\"s%s\":%s", i+1, (self.saidas & mask) ? 1 : 0)
+      mask <<= 1
+      if (i < 15)
+        payloadEntradas+=","
+        payloadSaidas+=","
+      end
+    end
+
+    payloadEntradas+="}"
+    payloadSaidas+="}"
+
+    mqtt.publish(string.format("stat/%s/entradas", self.topic), payloadEntradas)
+    mqtt.publish(string.format("stat/%s/saidas", self.topic), payloadSaidas)
   end
 
 
@@ -84,10 +117,11 @@ class IOR : Driver
       self.PIN_INPUT_LD = 21
       self.PIN_OUTPUT_LD = 22
       self.PIN_OUTS_ON = 23
-      self.entradas = bytes("000000", -3) # -3 -> tamanhno máximo do array é 3
+      self.entradas = 0x0000
       self.entradas_semFiltro = self.entradas
       self.entradas_filtro = 0
-      self.saidas = bytes("0000", -2) # -2 -> tamanhno máximo do array é 2
+      self.dipswtich = 0x00
+      self.saidas = 0x0000
       self.tmrSendMessage = 0
       
       gpio.digital_write(self.PIN_OUTS_ON, 1)
@@ -116,8 +150,7 @@ class IOR : Driver
       self.readInput()
 
       # do some processing
-      self.saidas[0]=self.entradas[0]
-      self.saidas[1]=self.entradas[1]
+      self.saidas=self.entradas
       
       # update outputs
       self.writeOutput()
@@ -126,15 +159,24 @@ class IOR : Driver
 
   # every_second
   def every_second()
-      # print("Entradas:" + str(self.entradas))
-      # print("Saidas:" + str(self.saidas))
-
       self.tmrSendMessage += 1
-      if (self.tmrSendMessage >= 5) # send message every 5s
+      if (self.tmrSendMessage >= 60) # send message every 60s
         self.tmrSendMessage = 0
         self.sendMessage()
+      # print("Entradas:" + str(self.entradas))
+      # print("Dipswitch:" + str(self.dipswtich))
+      # print("Saidas:" + str(self.saidas))       
+
       end
   end
+
+
+  # # json_append
+  # def json_append()
+  #   var msg = string.format(",\"IOR\":{\"Entradas\":\"%s\",\"Saidas\":\"%s\"}",
+  #             str(self.entradas), str(self.saidas))
+  #   tasmota.response_append(msg)
+  # end
 
 end
 
