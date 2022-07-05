@@ -1,3 +1,4 @@
+import strict
 import gpio
 import mqtt
 import string
@@ -12,22 +13,40 @@ class IOR : Driver
   var PIN_OUT4
   var entradas
   var saidas
-  var timeToSendMessage
+  var tmrSendMessage
   var topic
+  var entradas_filtro
+  var entradas_semFiltro
+
 
 
   # readInput
   def readInput()
+    var entradas_raw = bytes("000000", -3)
     gpio.digital_write(self.PIN_INPUT_LD, 1)
 
     for i: 0..23
-      self.entradas.setbits(i, 1, !gpio.digital_read(self.PIN_SDIN))
+      entradas_raw.setbits(i, 1, !gpio.digital_read(self.PIN_SDIN))
       
       gpio.digital_write(self.PIN_SCLK, 0)
       gpio.digital_write(self.PIN_SCLK, 1)
     end
 
     gpio.digital_write(self.PIN_INPUT_LD, 0)
+
+
+    # filtro
+    if (entradas_raw == self.entradas_semFiltro) 
+      self.entradas_filtro += 1
+    else 
+      self.entradas_filtro = 0
+    end
+
+    if (self.entradas_filtro > 0) 
+      self.entradas = entradas_raw
+    end
+    self.entradas_semFiltro = entradas_raw
+
   end
 
 
@@ -35,16 +54,12 @@ class IOR : Driver
   def writeOutput()
     gpio.digital_write(self.PIN_OUTPUT_LD, 0)
     gpio.digital_write(self.PIN_SCLK, 0)
-    var aux = bytes("0000")
+    var aux = bytes("0000", -2) # -2 -> tamanhno máximo do array é 2
     aux[0]=self.saidas[1]
     aux[1]=self.saidas[0]
 
     for i: 0..15
-      var x = 1
-      if aux.getbits(i, 1)==1 
-        x=0 
-      end
-      gpio.digital_write(self.PIN_SDOUT, x)
+      gpio.digital_write(self.PIN_SDOUT, (aux.getbits(i, 1)==0) ? 1 : 0)
 
       gpio.digital_write(self.PIN_SCLK, 1)
       gpio.digital_write(self.PIN_SCLK, 0)
@@ -56,8 +71,8 @@ class IOR : Driver
 
   # sendMessage
   def sendMessage()
-    mqtt.publish(string.format("stat/%s/entradas", self.topic), str(self.entradas))
-    mqtt.publish(string.format("stat/%s/saidas", self.topic), str(self.saidas))
+    mqtt.publish(string.format("stat/%s/entradas", self.topic), self.entradas)
+    mqtt.publish(string.format("stat/%s/saidas", self.topic), self.saidas)
   end
 
 
@@ -69,9 +84,11 @@ class IOR : Driver
       self.PIN_INPUT_LD = 21
       self.PIN_OUTPUT_LD = 22
       self.PIN_OUTS_ON = 23
-      self.entradas = bytes("5A5B5C")
-      self.saidas = bytes("FF00")
-      self.timeToSendMessage = 0
+      self.entradas = bytes("000000", -3) # -3 -> tamanhno máximo do array é 3
+      self.entradas_semFiltro = self.entradas
+      self.entradas_filtro = 0
+      self.saidas = bytes("0000", -2) # -2 -> tamanhno máximo do array é 2
+      self.tmrSendMessage = 0
       
       gpio.digital_write(self.PIN_OUTS_ON, 1)
       gpio.pin_mode(self.PIN_OUTS_ON, gpio.OUTPUT)
@@ -95,9 +112,14 @@ class IOR : Driver
 
   # every_50ms
   def every_50ms()
+      # update inputs
       self.readInput()
+
+      # do some processing
       self.saidas[0]=self.entradas[0]
       self.saidas[1]=self.entradas[1]
+      
+      # update outputs
       self.writeOutput()
   end
 
@@ -107,20 +129,12 @@ class IOR : Driver
       # print("Entradas:" + str(self.entradas))
       # print("Saidas:" + str(self.saidas))
 
-      self.timeToSendMessage = self.timeToSendMessage + 1
-      if self.timeToSendMessage >= 5
+      self.tmrSendMessage += 1
+      if (self.tmrSendMessage >= 5) # send message every 5s
+        self.tmrSendMessage = 0
         self.sendMessage()
-        self.timeToSendMessage =0
       end
   end
-
-
-  # # json_append
-  # def json_append()
-  #   var msg = string.format(",\"IOR\":{\"Entradas\":\"%s\",\"Saidas\":\"%s\"}",
-  #             str(self.entradas), str(self.saidas))
-  #   tasmota.response_append(msg)
-  # end
 
 end
 
