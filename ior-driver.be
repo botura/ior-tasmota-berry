@@ -139,8 +139,8 @@ class IOR : Driver
       res = res["Status"]
       self.topic = res["Topic"]
 
+      self.writeOutput()
       gpio.digital_write(self.PIN_OUTS_ON, 0)
-
   end
 
 
