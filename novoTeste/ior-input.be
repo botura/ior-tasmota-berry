@@ -9,57 +9,64 @@ class IOR : Driver
   var PIN_INPUT_LD
   var PIN_OUTPUT_LD
   var entradas
-  var dipswtich
-  var tmrSendMessage
-  var entradas_filtro
+  var dipSwitch
+  var tmr_filtro_entradas
   var entradas_semFiltro
+  var triggerEntradas
+  var memTriggerEntradas
 
 
 
   # readInput
   def readInput()
-    var entradas_raw = 0x0000
-    var dipswitch_raw = 0x00
+    var entradas_raw = bytes(-2)
     gpio.digital_write(self.PIN_INPUT_LD, 1)
     
-    var mask = 0x0080
     for i: 0..15
-      entradas_raw = entradas_raw | (!gpio.digital_read(self.PIN_SDIN) ? mask : 0)
-      
+      entradas_raw.setbits(15-i, 1, !gpio.digital_read(self.PIN_SDIN))
+
       gpio.digital_write(self.PIN_SCLK, 0)
       gpio.digital_write(self.PIN_SCLK, 1)
-      mask >>= 1
-      if i==7 mask = 0x8000 end
     end
     
-    mask = 0x80
     for i: 0..7
-      dipswitch_raw = dipswitch_raw | (!gpio.digital_read(self.PIN_SDIN) ? mask : 0)
-      
+      self.dipSwitch.setbits(7-i, 1, !gpio.digital_read(self.PIN_SDIN))
       gpio.digital_write(self.PIN_SCLK, 0)
       gpio.digital_write(self.PIN_SCLK, 1)
-      mask >>= 1
     end
     
     gpio.digital_write(self.PIN_SCLK, 0) # preciso deixar em 0 para não atrapalhar 74x595 do Tasmota
-
     gpio.digital_write(self.PIN_INPUT_LD, 0)
 
 
     # filtro das entradas
     if (entradas_raw == self.entradas_semFiltro) 
-      self.entradas_filtro += 1
+      self.tmr_filtro_entradas += 1
     else 
-      self.entradas_filtro = 0
+      self.tmr_filtro_entradas = 0
     end
 
-    if (self.entradas_filtro > 0) 
+    if (self.tmr_filtro_entradas >= 0) 
       self.entradas = entradas_raw
     end
     self.entradas_semFiltro = entradas_raw
 
-    self.dipswtich = dipswitch_raw
 
+    # Trigger das entradas
+    for i: 0..15
+      if (self.entradas.getbits(i, 1) && !self.memTriggerEntradas.getbits(i, 1))
+        self.triggerEntradas.setbits(i, 1, 1)
+        if (i<=7)
+          tasmota.set_power(i+8, !tasmota.get_power()[i+8])
+        else
+          tasmota.set_power(i-8, !tasmota.get_power()[i-8])
+        end
+      else
+        self.triggerEntradas.setbits(i, 1, 0)
+        self.memTriggerEntradas.setbits(i, 1, 1)
+      end
+      self.memTriggerEntradas.setbits(i, 1, self.entradas.getbits(i, 1))
+    end
   end
 
 
@@ -68,11 +75,12 @@ class IOR : Driver
       self.PIN_SCLK = 5
       self.PIN_SDIN = 19
       self.PIN_INPUT_LD = 21
-      self.entradas = 0x0000
-      self.entradas_semFiltro = self.entradas
-      self.entradas_filtro = 0
-      self.dipswtich = 0x00
-      self.tmrSendMessage = 0
+      self.entradas = bytes(-2)
+      self.entradas_semFiltro = bytes(-2)
+      self.tmr_filtro_entradas = 0
+      self.dipSwitch = bytes(-1)
+      self.triggerEntradas = bytes(-2)
+      self.memTriggerEntradas = bytes(-2)
       
       # gpio.pin_mode(self.PIN_SCLK, gpio.OUTPUT)
       gpio.pin_mode(self.PIN_SDIN, gpio.INPUT_PULLUP)
@@ -90,13 +98,8 @@ class IOR : Driver
 
   # every_second
   def every_second()
-      self.tmrSendMessage += 1
-      if (self.tmrSendMessage >= 60) # send message every 60s
-        self.tmrSendMessage = 0
-        # self.sendMessage()
-      end
-      print("Entradas:" + str(self.entradas))
-      print("Dipswitch:" + str(self.dipswtich))
+      # print("entradas: " + str(self.entradas))
+      # print("dipSwitch: " + str(self.dipSwitch))
   end
 
 
