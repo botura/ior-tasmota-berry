@@ -104,14 +104,9 @@ class IOR : Driver
     payloadEntradas+="}"
     payloadSaidas+="}"
 
-    var payloadTemperaturas = "{"
-    payloadTemperaturas += string.format("\"temp1\":%s,", 1234)
-    payloadTemperaturas += string.format("\"temp2\":%s", 5678)
-    payloadTemperaturas += "}"
-
     mqtt.publish(string.format("stat/%s/entradas", self.topic), payloadEntradas)
     mqtt.publish(string.format("stat/%s/saidas", self.topic), payloadSaidas)
-    mqtt.publish(string.format("stat/%s/temperaturas", self.topic), payloadTemperaturas)
+    mqtt.publish(string.format("stat/%s/sensors", self.topic), tasmota.read_sensors())
   end
 
 
